@@ -1,18 +1,38 @@
-#%%
 import os
+import cv2
+import dlib
 
 from flask import redirect, render_template, request, send_file, session, url_for
 
-
-
-#from matplotlib.patches import Ellipse
-#from scipy.interpolate import make_interp_spline
-#import numpy as np
-#import matplotlib as mpl
+import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+from scipy.interpolate import make_interp_spline
+import numpy as np
 
 
-print("Hello world")
+detector = dlib.get_frontal_face_detector()
+# the index is here begin at 0 and not 1 like in the image. we have to decrease by 1 the index
+left_eye_index = (36, 37, 38, 39, 40, 41)
+right_eye_index = (42, 43, 44, 45, 46, 47)
+left_eyebrow_index = (17, 18, 19, 20, 21)
+right_eyebrow_index = (22, 23, 24, 25, 26)
+intern_lips_index = (60, 61, 62, 63, 64, 65, 66, 67)
+extern_lips_index = (48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59)
+
+predictor = dlib.shape_predictor("app/static/shape_predictor_68_face_landmarks.dat")
+
+
+def getShape(image):
+  dets = detector(image, 1)
+  # take the first face
+  d = dets[0]
+  # gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+  # face_image = image[d.top():d.bottom(), d.left():d.right()]
+  shape = predictor(image, d)
+  return shape
+
 
 class Smiley:
   ratio_X = 1
@@ -98,20 +118,139 @@ class Smiley:
 
     #ax.set_transform(rot + base)
     #ax.rotate_around(5, 5, 20)
-    plt.savefig("smiley.jpg", format = 'jpg')
+    ax.axis('off')
+    plt.savefig("app/static/smiley.jpg", format = 'jpg')
     return ax
 
+
 def displayDefaultSmiley():
-  return 42
-  # print("bouh")
-  # smileyTest = Smiley()
-  # ax = plt.gca()
-  # smileyTest.draw_smiley(ax)
+  smileyTest = Smiley()
+  ax = plt.gca()
+  smileyTest.draw_smiley(ax)
   # return send_file(ax)
 
 
-smileyTest = Smiley()
-ax = plt.gca()
-smileyTest.draw_smiley(ax)
+# smileyTest = Smiley()
+# ax = plt.gca()
+# smileyTest.draw_smiley(ax)
+
+def drawImageWithLandmarks(image, shape):
+  plt.imshow(image,cmap='gray')
+  for i in range(68):
+    point = (shape.part(i).x, shape.part(i).y)
+    plt.scatter(point[0], point[1], s=5, c='red', marker='o')
+  plt.show()
 
 
+def rotate_image(image):
+  OUTER_EYES_AND_NOSE = [36, 45, 33]; #{left eye, right eye, nose}
+  # we would like to have the Y coordinate of the 2 eyes with the same value
+  shape = getShape(image)
+  right_eye = (shape.part(OUTER_EYES_AND_NOSE[0]).x, shape.part(OUTER_EYES_AND_NOSE[0]).y)
+  left_eye = (shape.part(OUTER_EYES_AND_NOSE[1]).x, shape.part(OUTER_EYES_AND_NOSE[1]).y)
+  # compute the angle between the eye centroids
+  dY = right_eye[1] - left_eye[1]
+  dX = right_eye[0] - left_eye[0]
+  angle = np.degrees(np.arctan2(dY, dX)) - 180
+  # compute center (x, y)-coordinates (i.e., the median point)
+  # between the two eyes in the input image
+  eyesCenter = ((left_eye[0] + right_eye[0]) // 2,
+  (left_eye[1] + right_eye[1]) // 2)
+  scale = 1
+  # grab the rotation matrix for rotating and scaling the face
+  M = cv2.getRotationMatrix2D(eyesCenter, angle, scale)
+  gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+  (w,h) = gray_image.shape #(desiredFaceWidth, desiredFaceHeight)
+  rotated_image = cv2.warpAffine(gray_image, M, (w, h),flags=cv2.INTER_CUBIC)
+  return rotated_image, angle
+
+def updateSmiley(smiley, image):
+
+  ######################################################################
+  # We will compute the different size of the face attribute 
+  # relatively to the size of the image we are working with.
+  # Then we will compute the ratio to make them at a relative size for the smiley.
+  #######################################################################
+
+  rotated_image,angle = rotate_image(image)
+  rotated_shape = getShape(rotated_image)
+
+  # let's compute the ratio.
+  # about x : let's take the points 1 and 17 from the landmarks, 
+  # and compare to the figure size we have set : 1
+  face_width = (rotated_shape.part(16).x - rotated_shape.part(0).x)
+  smiley.ratio_X = 1 / face_width
+
+  # about y : let's take the points 37 and 9 from the landmarks, and multiply by 3/2 
+  # and compare to the figure size we have set : 10
+  face_height = 1.5 * (rotated_shape.part(8).y - rotated_shape.part(right_eye_index[0]).y)
+  smiley.ratio_Y = 1 / face_height
+
+  # the rotation is the inverse of the rotation done 
+  smiley.rotation = -angle
+
+  #######################################################################
+  ###################       EYES     ####################################
+  #######################################################################
+  # to do so, we will compute the height and the width of the eye
+  # using the shape variable
+  smiley.right_eye_H = np.mean([rotated_shape.part(right_eye_index[1]).y, rotated_shape.part(right_eye_index[2]).y])\
+                  - np.mean([rotated_shape.part(right_eye_index[4]).y, rotated_shape.part(right_eye_index[5]).y])
+  smiley.right_eye_W = rotated_shape.part(right_eye_index[3]).x - rotated_shape.part(right_eye_index[0]).x
+  # lets compute the position. 
+  # I set the y coordinate of the eyes to be always at 2/3 of the face
+  # I suppose the coordinate of the shape.part[0] is at -0.5 
+  y_pos = 2/3 - 0.5
+  x_pos = abs(np.mean([rotated_shape.part(right_eye_index[3]).x, rotated_shape.part(right_eye_index[0]).x]) - rotated_shape.part(0).x)\
+              / face_width - 0.5
+  smiley.right_eye_center = (x_pos, y_pos) 
+
+
+  smiley.left_eye_H = np.mean([rotated_shape.part(left_eye_index[1]).y, rotated_shape.part(left_eye_index[2]).y])\
+                  - np.mean([rotated_shape.part(left_eye_index[4]).y, rotated_shape.part(left_eye_index[5]).y])
+  smiley.left_eye_W = rotated_shape.part(left_eye_index[3]).x - rotated_shape.part(left_eye_index[0]).x
+  # lets compute the position.
+  y_pos = 2/3 - 0.5
+  x_pos = abs(np.mean([rotated_shape.part(left_eye_index[3]).x, rotated_shape.part(left_eye_index[0]).x]) - rotated_shape.part(0).x)\
+              / face_width - 0.5
+  smiley.left_eye_center = (x_pos, y_pos)
+
+
+  #######################################################################
+  ###################   EYEBROWS     ####################################
+  #######################################################################
+  # left eyebrow:
+  pos_vect = smiley.left_eyebrow
+  for i in range(5):
+    x_pos = abs(rotated_shape.part(left_eyebrow_index[i]).x - rotated_shape.part(0).x)\
+              / face_width - 0.5
+    y_pos = abs(rotated_shape.part(left_eyebrow_index[i]).y - rotated_shape.part(8).y)\
+              / face_height - 0.5
+    pos_vect[i] = (x_pos, y_pos)
+  #smiley.left_eyebrow = pos_vect
+
+  # right eyebrow:
+  pos_vect2 = smiley.right_eyebrow
+  for i in range(5):
+    x_pos = abs(rotated_shape.part(right_eyebrow_index[i]).x - rotated_shape.part(0).x)\
+              / face_width - 0.5
+    y_pos = abs(rotated_shape.part(right_eyebrow_index[i]).y - rotated_shape.part(8).y)\
+              / face_height - 0.5
+    pos_vect2[i] = (x_pos, y_pos)
+  #smiley.right_eyebrow = pos_vect2
+
+
+  #######################################################################
+  ###################     MOUTH      ####################################
+  #######################################################################
+  mouth_index = intern_lips_index
+  # to do so, we will compute the height and the width of the eye
+  # using the shape variable
+  smiley.mouth_H = abs(rotated_shape.part(mouth_index[2]).y -rotated_shape.part(mouth_index[6]).y)
+  smiley.mouth_W = abs(rotated_shape.part(mouth_index[0]).x - rotated_shape.part(mouth_index[4]).x)
+  # lets compute the position. 
+  y_pos = abs(rotated_shape.part(mouth_index[6]).y - rotated_shape.part(8).y) \
+              / face_height - 0.5
+  x_pos = abs(rotated_shape.part(mouth_index[2]).x - rotated_shape.part(0).x)\
+              / face_width - 0.5
+  smiley.mouth_center = (x_pos, y_pos)

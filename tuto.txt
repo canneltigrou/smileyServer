@@ -1,0 +1,32 @@
+cd C:\Users\canne\Documents\GitHub\smileyServer
+.env\Scripts\activate.bat
+source .env/Scripts/activate
+
+virtualenv --clear MYENV
+
+python -m pip install -r requirements.txt
+
+
+
+python -m pip list
+
+pip freeze > requirements.txt
+
+
+
+
+https://docs.python.org/3/tutorial/venv.html
+
+
+run the application:
+python wsgi.py
+
+then:
+http://127.0.0.1:5000/
+
+
+
+
+
+import sys
+sys.path.append('/full/path/to/parent_directory')

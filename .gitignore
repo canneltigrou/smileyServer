@@ -1,0 +1,4 @@
+.env
+.vscode
+shots
+app/__pycache__

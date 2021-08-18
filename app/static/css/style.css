@@ -1,0 +1,15 @@
+h1 {
+    color:dodgerblue;
+    text-align: center;
+}
+
+
+.backround {
+  /* background-image: url("/smiley.jpg"); */
+  background-size: cover;
+  width: 300px;
+  height: 300px;
+  border: solid 2px red;
+}
+
+
