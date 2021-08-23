@@ -167,4 +167,4 @@ if __name__ == '__main__':
     app.run()
     
 camera.release()
-cv2.destroyAllWindows()     
+# cv2.destroyAllWindows()     
